@@ -183,7 +183,7 @@
 </main>
 
 <script async defer src="https://apis.google.com/js/api.js"></script>
-<script async defer src="https://accounts.google.com/gsi/client"></script>
+<script src="https://accounts.google.com/gsi/client"></script>
 
 <script>
   const DB_NAME = 'PDFModelsDB';
@@ -208,7 +208,17 @@
       client_id: CLIENT_ID,
       callback: () => {}, // Callback for Google Sign-In, not directly used for OAuth token here
     });
-    google.accounts.oauth2.loadDiscovery(onLoadGis);
+    // **هنا تم تعديل الاستدعاء:**
+    // لا يوجد "loadDiscovery" مباشرة هنا.
+    // بدلاً من ذلك، ننتظر أن تكون مكتبة GIS جاهزة
+    // وسنقوم بتهيئة tokenClient لاحقًا في onLoadGis
+    if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+      onLoadGis();
+    } else {
+      // قد لا يكون هذا ضرورياً بعد إزالة async/defer، ولكن كإجراء احترازي
+      console.log('Waiting for google.accounts.oauth2 to load...');
+      setTimeout(handleClientLoad, 200); // Retry after 200ms
+    }
   }
 
   async function intializeGapiClient() {
@@ -306,7 +316,9 @@
     return new Promise((resolve, reject) => {
       if (!gapiInited || !gisInited) {
         console.error('Google API client or GIS not loaded yet. Retrying in 1 second...');
-        setTimeout(() => authenticate().then(resolve).catch(reject), 1000); // Retry after 1 second
+        // هذا التأخير مفيد إذا كان GIS لا يزال قيد التحميل عندما يتم استدعاء authenticate لأول مرة.
+        // بعد إزالة async/defer، يجب أن يكون أسرع.
+        setTimeout(() => authenticate().then(resolve).catch(reject), 1000); 
         return;
       }
 
@@ -371,7 +383,6 @@
     try {
       await authenticate(); // Authenticate before attempting upload
 
-      // **هنا يتم تحديد الـ Folder ID الذي قمت بتقديمه**
       const formData = new FormData();
       const metadata = {
         name: name,
@@ -480,13 +491,12 @@
         await authenticate(); // Authenticate before viewing from Drive
 
         const iframe = document.getElementById('pdfViewer');
-        // Construct the URL to view the PDF directly from Google Drive.
-        // This method requires authentication as the file is private to the uploader's Drive.
         const accessToken = gapi.client.getToken().access_token;
         if (!accessToken) {
           showMessage('خطأ: لم يتم الحصول على رمز الوصول. يرجى المصادقة.', true);
           return;
         }
+        // استخدام Google Docs Viewer مع رمز الوصول
         iframe.src = `https://docs.google.com/viewer?url=https://www.googleapis.com/drive/v3/files/${googleDriveFileId}?alt=media&access_token=${accessToken}&embedded=true`;
         iframe.style.display = 'block';
         iframe.scrollIntoView({ behavior: "smooth" });
