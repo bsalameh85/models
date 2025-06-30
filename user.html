@@ -133,9 +133,9 @@
   <a href="admin.html">لوحة تحكم المدير ⚙️</a>
 </nav>
 <section id="searchSection">
-  <label for="filterKeyword">بحث بالكلمة المفتاحية في الاسم</label>
-  <input type="text" id="filterKeyword" placeholder="أدخل كلمة للبحث" />
-  <button id="searchBtn">بحث</button>
+  <h2>البحث عن النماذج</h2>
+  <input type="text" id="filterKeyword" placeholder="ابحث عن اسم النموذج..." />
+  <button id="fetchModelsBtn">جلب النماذج</button> 
 </section>
 
 <section id="resultsSection">
@@ -158,7 +158,6 @@
 <script>
   // Google API & GIS configuration
   const CLIENT_ID = '877200657875-b5qcv791tdespl57eof12tfl92q01hbm.apps.googleusercontent.com';
-  // في واجهة المستعلم، نحتاج فقط لقراءة بيانات التعريف للملفات (metadata) وليس صلاحيات التعديل أو الرفع
   const SCOPES = 'https://www.googleapis.com/auth/drive.metadata.readonly';
 
   const DESTINATION_FOLDER_ID = '1pr2L9RzJ5kI5ybA94EOZYuy1WFtoia-8';
@@ -188,8 +187,8 @@
     });
     gapiInited = true;
     console.log('gapi client initialized for user view');
-    // جلب النماذج وعرضها فوراً عند التحميل
-    await fetchAndRenderModels();
+    // لا يتم جلب النماذج تلقائيا هنا بعد الآن، بل يتم عند النقر على الزر
+    renderFilteredTable([]); // اعرض جدولاً فارغاً في البداية
   }
 
   function onLoadGis() {
@@ -207,9 +206,7 @@
   // هذه الوظيفة تم تعديلها لجلب الملفات من Google Drive
   async function getAllModelsFromDrive() {
     try {
-      // محاولة المصادقة بصمت عند تحميل الصفحة لجلب القائمة
-      await authenticate(false); // false يعني لا تظهر popup إلا إذا فشل الصمت تمامًا
-
+      // هذه الدالة الآن ستُستدعى فقط بعد المصادقة الناجحة من الزر
       const response = await gapi.client.drive.files.list({
         q: `'${DESTINATION_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false`,
         fields: 'files(id, name, createdTime)',
@@ -223,10 +220,8 @@
         googleDriveFileId: file.id
       }));
     } catch (error) {
-      console.error('Error fetching files from Google Drive (silent auth):', error);
-      // لا تعرض رسالة خطأ للمستخدم في واجهة المستعلم عادةً عند فشل المصادقة الصامتة
-      // بل اعرض جدولاً فارغاً أو رسالة "يرجى المصادقة لعرض الملفات"
-      renderFilteredTable([]); // عرض جدول فارغ
+      console.error('Error fetching files from Google Drive:', error);
+      alert('خطأ في جلب الملفات من Google Drive. يرجى التأكد من المصادقة والاتصال بالإنترنت.');
       return [];
     }
   }
@@ -256,7 +251,7 @@
         if (forcePrompt) {
           tokenClient.requestAccessToken({ prompt: 'consent' }); // إظهار نافذة الموافقة
         } else {
-          tokenClient.requestAccessToken({ prompt: 'none' }); // محاولة بصمت
+          tokenClient.requestAccessToken({ prompt: 'none' }); // محاولة بصمت (يفترض أن هذا لن يعمل على GitHub Pages)
         }
       } else {
         console.log('Using existing access token.');
@@ -265,10 +260,17 @@
     });
   }
 
-  // وظيفة لجلب وعرض النماذج
+  // وظيفة لجلب وعرض النماذج بعد المصادقة
   async function fetchAndRenderModels() {
-    allModels = await getAllModelsFromDrive(); // جلب جميع النماذج وتخزينها
-    renderFilteredTable(''); // عرض كل النماذج في البداية
+    try {
+      await authenticate(true); // اجبار المستخدم على المصادقة عند النقر على الزر
+      allModels = await getAllModelsFromDrive();
+      renderFilteredTable(document.getElementById('filterKeyword').value.trim());
+    } catch (error) {
+      console.error('Failed to authenticate or fetch models:', error);
+      alert('فشل المصادقة أو جلب النماذج. يرجى المحاولة مرة أخرى.');
+      renderFilteredTable([]); // عرض جدول فارغ عند الفشل
+    }
   }
 
   // وظيفة لعرض الجدول بناءً على البحث
@@ -307,6 +309,12 @@
     renderFilteredTable(e.target.value.trim());
   });
 
+  // حدث النقر على الزر الجديد "جلب النماذج"
+  document.getElementById('fetchModelsBtn').addEventListener('click', () => {
+    fetchAndRenderModels();
+  });
+  
+  // لا يزال زر البحث يعمل للتصفية بعد جلب النماذج
   document.getElementById('searchBtn').addEventListener('click', () => {
     renderFilteredTable(document.getElementById('filterKeyword').value.trim());
   });
@@ -328,13 +336,13 @@
         return;
       }
       try {
-        // عند النقر على عرض، قم بالمصادقة مع إظهار الـ popup إذا لزم الأمر
-        await authenticate(true); // true يعني: اظهر نافذة الموافقة إذا كانت مطلوبة
+        await authenticate(true); // اجبار المصادقة عند النقر على عرض لضمان وجود الرمز
 
         const iframe = document.getElementById('pdfViewer');
         const accessToken = gapi.client.getToken().access_token;
         if (!accessToken) {
           console.error('Access token not available for viewing.');
+          alert('خطأ: لم يتم الحصول على رمز الوصول. يرجى المصادقة أولاً.');
           return;
         }
         iframe.src = `https://docs.google.com/viewer?url=https://www.googleapis.com/drive/v3/files/${googleDriveFileId}?alt=media&access_token=${accessToken}&embedded=true`;
@@ -343,12 +351,12 @@
 
       } catch (err) {
         console.error('Error viewing file from Google Drive:', err);
-        alert('تعذر عرض الملف. يرجى التأكد من اتصالك بالإنترنت ومنح الصلاحيات اللازمة.'); // رسالة للمستخدم هنا
+        alert('تعذر عرض الملف. يرجى التأكد من اتصالك بالإنترنت ومنح الصلاحيات اللازمة.');
       }
     }
   });
 
-  // تحديث التاريخ والوقت كل ثانية (أعيدت إضافتها)
+  // تحديث التاريخ والوقت كل ثانية
   function updateDateTime() {
     const dateTimeDiv = document.getElementById('dateTime');
     const now = new Date();
