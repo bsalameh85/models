@@ -195,6 +195,9 @@
   const CLIENT_ID = '877200657875-b5qcv791tdespl57eof12tfl92q01hbm.apps.googleusercontent.com'; // **الـ Client ID الخاص بك**
   const SCOPES = 'https://www.googleapis.com/auth/drive.file'; // يمنح الوصول للملفات التي ينشئها التطبيق
 
+  // **الـ Folder ID لمجلد Google Drive الذي تريد الرفع إليه**
+  const DESTINATION_FOLDER_ID = '1pr2L9RzJ5kI5ybA94EOZYuy1WFtoia-8'; 
+
   let gapiInited = false;
   let gisInited = false;
   let tokenClient; // لـ Google Identity Services (GIS)
@@ -237,9 +240,7 @@
       request.onupgradeneeded = event => {
         const db = event.target.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
-          // Changed keyPath from 'id' to 'googleDriveFileId' to ensure uniqueness for Drive files
-          // If you need 'id' for other purposes, you can add it as another index or property
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' }); // Keep 'id' for consistency if you modify it later
+          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' }); 
           store.createIndex('name', 'name', { unique: false });
           store.createIndex('googleDriveFileId', 'googleDriveFileId', { unique: true }); // New index for Drive ID
         }
@@ -370,12 +371,12 @@
     try {
       await authenticate(); // Authenticate before attempting upload
 
-      // Create FormData for multipart upload
+      // **هنا يتم تحديد الـ Folder ID الذي قمت بتقديمه**
       const formData = new FormData();
       const metadata = {
         name: name,
         mimeType: 'application/pdf',
-        // Optional: parents: ['FOLDER_ID'] if you want to upload to a specific folder
+        parents: [DESTINATION_FOLDER_ID] // تحديد المجلد الهدف هنا
       };
       formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
       formData.append('file', file);
