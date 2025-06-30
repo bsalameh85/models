@@ -101,7 +101,8 @@
       box-shadow: 0 0 8px #aaa;
       display: none;
     }
-    nav { /* تنسيقات شريط التنقل للمستعلم */
+    /* تمت إزالة تنسيقات شريط التنقل لأنه سيتم إزالة العنصر نفسه */
+    /* nav {
       text-align: center;
       margin-bottom: 20px;
     }
@@ -118,7 +119,7 @@
     nav a:hover {
       background-color: #1e3a8a;
       color: white;
-    }
+    } */
   </style>
 </head>
 <body>
@@ -129,14 +130,11 @@
   </div>
 </header>
 <main>
-<nav>
-  <a href="admin.html">لوحة تحكم المدير ⚙️</a>
-</nav>
 <section id="searchSection">
   <h2>البحث عن النماذج</h2>
   <input type="text" id="filterKeyword" placeholder="ابحث عن اسم النموذج..." />
   <button id="searchBtn">بحث</button>
-  </section>
+</section>
 
 <section id="resultsSection">
   <table id="modelsTable">
@@ -231,6 +229,7 @@
       }
       const iframe = document.getElementById('pdfViewer');
       // استخدام رابط عرض عام لملفات Google Drive العامة
+      // تأكد أن ملفات PDF عامة على Google Drive (Anyone with the link can view)
       iframe.src = `https://drive.google.com/file/d/${googleDriveFileId}/preview`;
       iframe.style.display = 'block';
       iframe.scrollIntoView({ behavior: "smooth" });
