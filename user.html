@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar">
 <head>
   <meta charset="UTF-8" />
-  <title>مديرية صحة محافظة مادبا نظام ادارة النماذج</title>
+  <title>واجهة المستعلم - البحث عن نماذج PDF</title>
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
@@ -11,22 +11,17 @@
       direction: rtl;
     }
     header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 15px 20px;
       background: #1e3a8a;
+      padding: 15px 20px;
       color: white;
       text-align: center;
-    }
-    #dateTime {
-      font-size: 16px;
-      direction: ltr;
-    }
-    #headerTitle {
       font-size: 24px;
-      flex-grow: 1;
-      text-align: center;
+      line-height: 1.2;
+    }
+    header div {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 5px;
     }
     main {
       max-width: 900px;
@@ -36,31 +31,14 @@
       border-radius: 8px;
       box-shadow: 0 0 10px #ccc;
     }
-    label {
-      display: block;
-      margin: 10px 0 5px;
-    }
     input[type=text] {
       width: 100%;
-      padding: 8px;
+      padding: 10px;
       border-radius: 6px;
       border: 1px solid #ccc;
       box-sizing: border-box;
-    }
-    button {
-      margin-top: 15px;
-      background-color: #2563eb;
-      color: white;
-      border: none;
-      padding: 12px 25px;
       font-size: 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background-color 0.3s;
-      min-width: 100px;
-    }
-    button:hover {
-      background-color: #1e40af;
+      margin-bottom: 15px;
     }
     table {
       width: 100%;
@@ -75,52 +53,68 @@
     th {
       background-color: #e5e7eb;
     }
-    .actionBtn {
-      min-width: 100px; /* Reverted to wider width for single button */
-      padding: 10px 15px; /* Reverted padding */
-      font-size: 14px;
+    .message {
+      margin-top: 15px;
+      padding: 12px;
       border-radius: 6px;
-      border: none;
-      cursor: pointer;
+    }
+    .error {
+      background-color: #fee2e2;
+      color: #991b1b;
+    }
+    nav {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    nav a {
+      color: #1e3a8a;
+      text-decoration: none;
+      font-weight: bold;
+      font-size: 18px;
+      border: 2px solid #1e3a8a;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: background-color 0.3s, color 0.3s;
+    }
+    nav a:hover {
+      background-color: #1e3a8a;
       color: white;
-      transition: background-color 0.3s;
-      margin: 0; /* Removed extra margin */
     }
     .viewBtn {
       background-color: #2563eb;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      font-size: 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.3s;
     }
     .viewBtn:hover {
       background-color: #1e40af;
     }
-    /* Removed .printBtn styles */
-    iframe {
+    #pdfViewer {
+      display: none;
       width: 100%;
       height: 600px;
-      border: none;
       margin-top: 20px;
-      border-radius: 6px;
-      box-shadow: 0 0 8px #aaa;
-      display: none;
+      border-radius: 8px;
+      box-shadow: 0 0 10px #aaa;
     }
   </style>
 </head>
 <body>
 <header>
-  <div id="dateTime"></div>
-  <div id="headerTitle">
-    مديرية صحة محافظة مادبا<br>
-    نظام ادارة النماذج
-  </div>
+  <div>مديرية صحة محافظة مادبا</div>
+  واجهة المستعلم - البحث عن نماذج PDF
 </header>
-
 <main>
+<nav>
+  <a href="admin.html">لوحة تحكم المدير ⚙️</a>
+</nav>
 <section id="searchSection">
-  <label for="filterKeyword">بحث بالكلمة المفتاحية في الاسم</label>
-  <input type="text" id="filterKeyword" placeholder="أدخل كلمة للبحث" />
-  <button id="searchBtn">بحث</button>
-</section>
-
-<section id="resultsSection">
+  <h2>البحث عن النماذج</h2>
+  <input type="text" id="searchInput" placeholder="ابحث عن اسم النموذج..." />
   <table id="modelsTable">
     <thead>
       <tr>
@@ -134,167 +128,191 @@
 </section>
 </main>
 
-<script>
-  const DB_NAME = 'PDFModelsDB';
-  const DB_VERSION = 1;
-  const STORE_NAME = 'models';
-  let db;
+<script async defer src="https://apis.google.com/js/api.js"></script>
+<script src="https://accounts.google.com/gsi/client"></script>
 
-  // Function to open the IndexedDB
-  function openDB() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-      request.onupgradeneeded = event => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-        }
-      };
-      request.onsuccess = event => {
-        db = event.target.result;
-        resolve(db);
-      };
-      request.onerror = event => {
-        reject(event.target.error);
-      };
+<script>
+  // Google API & GIS configuration
+  const CLIENT_ID = '877200657875-b5qcv791tdespl57eof12tfl92q01hbm.apps.googleusercontent.com';
+  // في واجهة المستعلم، نحتاج فقط لقراءة بيانات التعريف للملفات (metadata) وليس صلاحيات التعديل أو الرفع
+  const SCOPES = 'https://www.googleapis.com/auth/drive.metadata.readonly'; 
+  
+  const DESTINATION_FOLDER_ID = '1pr2L9RzJ5kI5ybA94EOZYuy1WFtoia-8'; 
+
+  let gapiInited = false;
+  let gisInited = false;
+  let tokenClient;
+  let allModels = []; // لتخزين جميع النماذج بعد جلبها من درايف
+
+  function handleClientLoad() {
+    gapi.load('client', intializeGapiClient);
+    google.accounts.id.initialize({
+      client_id: CLIENT_ID,
+      callback: () => {}, 
     });
+    if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+      onLoadGis();
+    } else {
+      console.log('Waiting for google.accounts.oauth2 to load...');
+      setTimeout(handleClientLoad, 200); 
+    }
   }
 
-  // Function to get all models from IndexedDB
-  function getAllModels() {
+  async function intializeGapiClient() {
+    await gapi.client.init({
+      discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+    });
+    gapiInited = true;
+    console.log('gapi client initialized for user view');
+    // جلب النماذج وعرضها فوراً
+    await fetchAndRenderModels(); 
+  }
+
+  function onLoadGis() {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      callback: '', 
+    });
+    gisInited = true;
+    console.log('GIS client initialized for user view');
+  }
+
+  window.onload = handleClientLoad; 
+
+  // هذه الوظيفة تم تعديلها لجلب الملفات من Google Drive
+  async function getAllModelsFromDrive() {
+    try {
+      await authenticate(); // تأكد من المصادقة قبل جلب الملفات
+
+      const response = await gapi.client.drive.files.list({
+        q: `'${DESTINATION_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false`,
+        fields: 'files(id, name, createdTime)', 
+        pageSize: 100 
+      });
+
+      const files = response.result.files;
+      // تحويل الملفات إلى تنسيق يتناسب مع ما كنا نستخدمه سابقًا
+      return files.map(file => ({
+        id: file.createdTime ? new Date(file.createdTime).getTime() : Date.now(),
+        name: file.name.replace(/\.pdf$/i, ''), // إزالة امتداد .pdf من الاسم
+        googleDriveFileId: file.id
+      }));
+    } catch (error) {
+      console.error('Error fetching files from Google Drive:', error);
+      // لا تعرض رسالة خطأ للمستخدم في واجهة المستعلم عادةً، فقط سجلها في الكونسول
+      // showMessage('خطأ في جلب الملفات من Google Drive: ' + (error.result?.error?.message || error.message), true);
+      return []; 
+    }
+  }
+
+  // Authentication function - معدلة لتكون أكثر بساطة للمستعلم (يمكن أن تكون المصادقة بدون طلب الموافقة المتكرر)
+  async function authenticate() {
     return new Promise((resolve, reject) => {
-      if (!db) {
-        reject('Database not open.');
+      if (!gapiInited || !gisInited) {
+        console.error('Google API client or GIS not loaded yet. Retrying in 1 second...');
+        setTimeout(() => authenticate().then(resolve).catch(reject), 1000); 
         return;
       }
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.getAll();
-      request.onsuccess = e => resolve(e.target.result);
-      request.onerror = e => reject(e.target.error);
+
+      tokenClient.callback = (resp) => {
+        if (resp.error) {
+          console.error('Authentication error:', resp.error);
+          // showMessage('خطأ في المصادقة: ' + (resp.error.details || resp.error), true);
+          reject(resp.error);
+        } else {
+          console.log('Authentication successful:', resp);
+          resolve();
+        }
+      };
+
+      const token = gapi.client.getToken();
+      // هنا نحاول الحصول على الرمز بدون إظهار نافذة الموافقة إذا كان الرمز موجودًا وصالحًا
+      if (token === null || token.expires_at < Date.now() + 60000) { 
+        console.log('Requesting new access token (silent or popup if needed)...');
+        // prompt: 'none' سيحاول الحصول على الرمز بصمت، إذا فشل سيتطلب 'consent'
+        // ولكن للتبسيط في واجهة المستعلم، يمكننا تركها كما هي أو استخدام 'select_account' إذا لم تعمل 'none'
+        tokenClient.requestAccessToken({ prompt: 'none' }); // حاول المصادقة بصمت
+      } else {
+        console.log('Using existing access token.');
+        resolve();
+      }
     });
   }
 
-  // تصفية النماذج بناءً على الكلمة المفتاحية
-  function filterModels(models, keyword) {
-    if (!keyword) return models;
-    const lowerCaseKeyword = keyword.toLowerCase();
-    return models.filter(m => m.name.toLowerCase().includes(lowerCaseKeyword));
+  // وظيفة لجلب وعرض النماذج
+  async function fetchAndRenderModels() {
+    allModels = await getAllModelsFromDrive(); // جلب جميع النماذج وتخزينها
+    renderFilteredTable(''); // عرض كل النماذج في البداية
   }
 
-  // عرض النتائج في الجدول
-  function renderTable(models) {
+  // وظيفة لعرض الجدول بناءً على البحث
+  function renderFilteredTable(searchText) {
     const tbody = document.querySelector('#modelsTable tbody');
     tbody.innerHTML = '';
+    const filteredModels = allModels.filter(model =>
+      model.name.toLowerCase().includes(searchText.toLowerCase())
+    );
 
-    if (models.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="2">لا توجد نتائج مطابقة لمعايير البحث.</td></tr>`;
+    if (filteredModels.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="2">لا يوجد نماذج مطابقة.</td></tr>`;
+      document.getElementById('pdfViewer').style.display = 'none';
       return;
     }
 
-    models.forEach(model => {
+    filteredModels.forEach(model => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${model.name}</td>
-        <td>
-          <button class="actionBtn viewBtn" data-id="${model.id}">عرض</button>
-        </td>
+        <td>${escapeHtml(model.name)}</td>
+        <td><button class="viewBtn" data-googledriveid="${model.googleDriveFileId || ''}">عرض</button></td>
       `;
       tbody.appendChild(tr);
     });
   }
 
-  // البحث و عرض النتائج
-  async function searchAndRender() {
-    const keyword = document.getElementById('filterKeyword').value.trim();
-
-    try {
-      const allModels = await getAllModels();
-      const filtered = filterModels(allModels, keyword);
-      renderTable(filtered);
-      hidePdfViewer();
-    } catch (error) {
-      console.error('Error fetching or rendering models:', error);
-      alert('حدث خطأ أثناء جلب النماذج: ' + error.message);
-      renderTable([]);
-    }
+  // Helper functions
+  function escapeHtml(text) {
+    return text.replace(/[&<>"']/g, m => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[m]);
   }
 
-  function hidePdfViewer() {
-    const iframe = document.getElementById('pdfViewer');
-    iframe.style.display = 'none';
-    iframe.src = '';
-  }
+  // Search input event listener
+  document.getElementById('searchInput').addEventListener('input', e => {
+    renderFilteredTable(e.target.value.trim());
+  });
 
-  // معالج حدث لزر "عرض" فقط
-  document.querySelector('#modelsTable tbody').addEventListener('click', async (e) => {
-    const id = Number(e.target.dataset.id);
-    if (!id) return;
-
+  // View Button Event Listener
+  document.querySelector('#modelsTable tbody').addEventListener('click', async e => {
     if (e.target.classList.contains('viewBtn')) {
-      try {
-        const allModels = await getAllModels();
-        const model = allModels.find(m => m.id === id);
+      const googleDriveFileId = e.target.dataset.googledriveid;
 
-        if (model && model.fileBlob instanceof Blob) {
-          const iframe = document.getElementById('pdfViewer');
-          const url = URL.createObjectURL(model.fileBlob);
-          iframe.src = url;
-          iframe.style.display = 'block';
-          iframe.onload = () => URL.revokeObjectURL(url);
-          iframe.scrollIntoView({ behavior: "smooth" });
-        } else {
-          alert('الملف غير متوفر أو غير صالح للعرض.');
-          hidePdfViewer();
+      if (!googleDriveFileId) {
+        // showMessage('لا يوجد معرف ملف جوجل درايف لهذا النموذج.', true);
+        console.error('No Google Drive File ID for this model.');
+        return;
+      }
+      try {
+        await authenticate(); 
+
+        const iframe = document.getElementById('pdfViewer');
+        const accessToken = gapi.client.getToken().access_token;
+        if (!accessToken) {
+          // showMessage('خطأ: لم يتم الحصول على رمز الوصول. يرجى المصادقة.', true);
+          console.error('Access token not available for viewing.');
+          return;
         }
-      } catch (error) {
-        console.error('Error viewing PDF:', error);
-        alert('حدث خطأ أثناء عرض الملف: ' + error.message);
-        hidePdfViewer();
+        iframe.src = `https://docs.google.com/viewer?url=https://www.googleapis.com/drive/v3/files/${googleDriveFileId}?alt=media&access_token=${accessToken}&embedded=true`;
+        iframe.style.display = 'block';
+        iframe.scrollIntoView({ behavior: "smooth" });
+
+      } catch (err) {
+        console.error('Error viewing file from Google Drive:', err);
+        // showMessage('خطأ في تحميل الملف من جوجل درايف: ' + err.message || err, true);
       }
     }
   });
 
-  // أحداث الأزرار وادخال البحث
-  document.getElementById('searchBtn').addEventListener('click', () => {
-    searchAndRender();
-  });
-
-  document.getElementById('filterKeyword').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      searchAndRender();
-    }
-  });
-
-  // تحديث التاريخ والوقت كل ثانية
-  function updateDateTime() {
-    const dateTimeDiv = document.getElementById('dateTime');
-    const now = new Date();
-
-    const optionsDate = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    const optionsTime = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
-
-    const formattedDate = now.toLocaleDateString('ar-EG', optionsDate);
-    const formattedTime = now.toLocaleTimeString('ar-EG', optionsTime);
-
-    dateTimeDiv.textContent = `${formattedDate} - ${formattedTime}`;
-  }
-
-  // Initialize: Open DB and then render all models initially
-  openDB().then(() => {
-    // Optionally, uncomment the next line to show all models when the page loads
-    // searchAndRender();
-  }).catch(err => {
-    console.error('Error opening database in user page:', err);
-    alert('تعذر فتح قاعدة البيانات: ' + err.message);
-  });
-
-  setInterval(updateDateTime, 1000);
-  updateDateTime();
-
-  // Initial render with no results until search is performed or page loads all
-  renderTable([]);
 </script>
 </body>
 </html>
