@@ -11,22 +11,22 @@
       direction: rtl;
     }
     header {
-      display: flex; /* استعادة الـ flexbox للتحكم في التوزيع */
-      justify-content: space-between; /* توزيع العناصر على الجانبين */
-      align-items: center; /* توسيط عمودي */
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       padding: 15px 20px;
       background: #1e3a8a;
       color: white;
-      text-align: center; /* يبقى هنا للتوسيط العام للمحتوى */
+      text-align: center;
     }
     #dateTime {
       font-size: 16px;
-      direction: ltr; /* لضمان عرض التاريخ والوقت بشكل صحيح */
+      direction: ltr;
     }
     #headerTitle {
       font-size: 24px;
-      flex-grow: 1; /* يسمح للعنصر بأخذ المساحة المتاحة وتوسيطه */
-      text-align: center; /* توسيط العنوان نفسه */
+      flex-grow: 1;
+      text-align: center;
     }
     main {
       max-width: 900px;
@@ -101,30 +101,12 @@
       box-shadow: 0 0 8px #aaa;
       display: none;
     }
-    /* تمت إزالة تنسيقات شريط التنقل لأنه سيتم إزالة العنصر نفسه */
-    /* nav {
-      text-align: center;
-      margin-bottom: 20px;
-    }
-    nav a {
-      color: #1e3a8a;
-      text-decoration: none;
-      font-weight: bold;
-      font-size: 18px;
-      border: 2px solid #1e3a8a;
-      padding: 6px 12px;
-      border-radius: 6px;
-      transition: background-color 0.3s, color 0.3s;
-    }
-    nav a:hover {
-      background-color: #1e3a8a;
-      color: white;
-    } */
   </style>
 </head>
 <body>
 <header>
-  <div id="dateTime"></div> <div id="headerTitle">
+  <div id="dateTime"></div>
+  <div id="headerTitle">
     مديرية صحة محافظة مادبا<br>
     نظام ادارة النماذج
   </div>
@@ -151,12 +133,11 @@
 </main>
 
 <script>
-  let allModels = []; // لتخزين جميع النماذج بعد جلبها من ملف JSON
+  let allModels = [];
 
-  // وظيفة لجلب النماذج من ملف JSON محلي
   async function fetchModelsFromLocalJson() {
     try {
-      const response = await fetch('models_list.json'); // افترض أن models_list.json موجود في نفس المجلد
+      const response = await fetch('models_list.json');
       if (!response.ok) {
         throw new Error(`Failed to load models_list.json: ${response.statusText}`);
       }
@@ -166,11 +147,10 @@
     } catch (error) {
       console.error('Error fetching models from local JSON:', error);
       alert('خطأ في تحميل قائمة النماذج. يرجى التأكد من وجود ملف models_list.json وأن محتواه صحيح.');
-      renderFilteredTable([]); // عرض جدول فارغ في حالة الخطأ
+      renderFilteredTable([]);
     }
   }
 
-  // وظيفة لعرض الجدول بناءً على البحث
   function renderFilteredTable(searchText) {
     const tbody = document.querySelector('#modelsTable tbody');
     tbody.innerHTML = '';
@@ -194,14 +174,12 @@
     });
   }
 
-  // Helper functions
   function escapeHtml(text) {
     return text.replace(/[&<>"']/g, m => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     })[m]);
   }
 
-  // Search input event listener
   document.getElementById('filterKeyword').addEventListener('input', e => {
     renderFilteredTable(e.target.value.trim());
   });
@@ -217,7 +195,6 @@
     }
   });
 
-  // View Button Event Listener
   document.querySelector('#modelsTable tbody').addEventListener('click', async e => {
     if (e.target.classList.contains('viewBtn')) {
       const googleDriveFileId = e.target.dataset.googledriveid;
@@ -236,7 +213,6 @@
     }
   });
 
-  // تحديث التاريخ والوقت كل ثانية
   function updateDateTime() {
     const dateTimeDiv = document.getElementById('dateTime');
     const now = new Date();
@@ -250,8 +226,7 @@
     dateTimeDiv.textContent = `${formattedDate} - ${formattedTime}`;
   }
 
-  // Initial calls
-  fetchModelsFromLocalJson(); // جلب النماذج من ملف JSON عند تحميل الصفحة
+  fetchModelsFromLocalJson();
   setInterval(updateDateTime, 1000);
   updateDateTime();
 </script>
