@@ -135,8 +135,8 @@
 <section id="searchSection">
   <h2>البحث عن النماذج</h2>
   <input type="text" id="filterKeyword" placeholder="ابحث عن اسم النموذج..." />
-  <button id="fetchModelsBtn">جلب النماذج</button> 
-</section>
+  <button id="searchBtn">بحث</button>
+  </section>
 
 <section id="resultsSection">
   <table id="modelsTable">
@@ -152,124 +152,23 @@
 </section>
 </main>
 
-<script async defer src="https://apis.google.com/js/api.js"></script>
-<script src="https://accounts.google.com/gsi/client"></script>
-
 <script>
-  // Google API & GIS configuration
-  const CLIENT_ID = '877200657875-b5qcv791tdespl57eof12tfl92q01hbm.apps.googleusercontent.com';
-  const SCOPES = 'https://www.googleapis.com/auth/drive.metadata.readonly';
+  let allModels = []; // لتخزين جميع النماذج بعد جلبها من ملف JSON
 
-  const DESTINATION_FOLDER_ID = '1pr2L9RzJ5kI5ybA94EOZYuy1WFtoia-8';
-
-  let gapiInited = false;
-  let gisInited = false;
-  let tokenClient;
-  let allModels = []; // لتخزين جميع النماذج بعد جلبها من درايف
-
-  function handleClientLoad() {
-    gapi.load('client', intializeGapiClient);
-    google.accounts.id.initialize({
-      client_id: CLIENT_ID,
-      callback: () => {},
-    });
-    if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
-      onLoadGis();
-    } else {
-      console.log('Waiting for google.accounts.oauth2 to load...');
-      setTimeout(handleClientLoad, 200);
-    }
-  }
-
-  async function intializeGapiClient() {
-    await gapi.client.init({
-      discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-    });
-    gapiInited = true;
-    console.log('gapi client initialized for user view');
-    // لا يتم جلب النماذج تلقائيا هنا بعد الآن، بل يتم عند النقر على الزر
-    renderFilteredTable([]); // اعرض جدولاً فارغاً في البداية
-  }
-
-  function onLoadGis() {
-    tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: SCOPES,
-      callback: '',
-    });
-    gisInited = true;
-    console.log('GIS client initialized for user view');
-  }
-
-  window.onload = handleClientLoad;
-
-  // هذه الوظيفة تم تعديلها لجلب الملفات من Google Drive
-  async function getAllModelsFromDrive() {
+  // وظيفة لجلب النماذج من ملف JSON محلي
+  async function fetchModelsFromLocalJson() {
     try {
-      // هذه الدالة الآن ستُستدعى فقط بعد المصادقة الناجحة من الزر
-      const response = await gapi.client.drive.files.list({
-        q: `'${DESTINATION_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false`,
-        fields: 'files(id, name, createdTime)',
-        pageSize: 100
-      });
-
-      const files = response.result.files;
-      return files.map(file => ({
-        id: file.createdTime ? new Date(file.createdTime).getTime() : Date.now(),
-        name: file.name.replace(/\.pdf$/i, ''),
-        googleDriveFileId: file.id
-      }));
-    } catch (error) {
-      console.error('Error fetching files from Google Drive:', error);
-      alert('خطأ في جلب الملفات من Google Drive. يرجى التأكد من المصادقة والاتصال بالإنترنت.');
-      return [];
-    }
-  }
-
-  // Authentication function - تم تعديلها لتقبل معلم لتحديد نوع الـ prompt
-  async function authenticate(forcePrompt = false) {
-    return new Promise((resolve, reject) => {
-      if (!gapiInited || !gisInited) {
-        console.error('Google API client or GIS not loaded yet. Retrying in 1 second...');
-        setTimeout(() => authenticate(forcePrompt).then(resolve).catch(reject), 1000);
-        return;
+      const response = await fetch('models_list.json'); // افترض أن models_list.json موجود في نفس المجلد
+      if (!response.ok) {
+        throw new Error(`Failed to load models_list.json: ${response.statusText}`);
       }
-
-      tokenClient.callback = (resp) => {
-        if (resp.error) {
-          console.error('Authentication error:', resp.error);
-          reject(resp.error);
-        } else {
-          console.log('Authentication successful:', resp);
-          resolve();
-        }
-      };
-
-      const token = gapi.client.getToken();
-      if (token === null || token.expires_at < Date.now() + 60000) {
-        console.log('Requesting new access token...');
-        if (forcePrompt) {
-          tokenClient.requestAccessToken({ prompt: 'consent' }); // إظهار نافذة الموافقة
-        } else {
-          tokenClient.requestAccessToken({ prompt: 'none' }); // محاولة بصمت (يفترض أن هذا لن يعمل على GitHub Pages)
-        }
-      } else {
-        console.log('Using existing access token.');
-        resolve();
-      }
-    });
-  }
-
-  // وظيفة لجلب وعرض النماذج بعد المصادقة
-  async function fetchAndRenderModels() {
-    try {
-      await authenticate(true); // اجبار المستخدم على المصادقة عند النقر على الزر
-      allModels = await getAllModelsFromDrive();
+      allModels = await response.json();
+      console.log('Models loaded from local JSON:', allModels);
       renderFilteredTable(document.getElementById('filterKeyword').value.trim());
     } catch (error) {
-      console.error('Failed to authenticate or fetch models:', error);
-      alert('فشل المصادقة أو جلب النماذج. يرجى المحاولة مرة أخرى.');
-      renderFilteredTable([]); // عرض جدول فارغ عند الفشل
+      console.error('Error fetching models from local JSON:', error);
+      alert('خطأ في تحميل قائمة النماذج. يرجى التأكد من وجود ملف models_list.json وأن محتواه صحيح.');
+      renderFilteredTable([]); // عرض جدول فارغ في حالة الخطأ
     }
   }
 
@@ -309,12 +208,6 @@
     renderFilteredTable(e.target.value.trim());
   });
 
-  // حدث النقر على الزر الجديد "جلب النماذج"
-  document.getElementById('fetchModelsBtn').addEventListener('click', () => {
-    fetchAndRenderModels();
-  });
-  
-  // لا يزال زر البحث يعمل للتصفية بعد جلب النماذج
   document.getElementById('searchBtn').addEventListener('click', () => {
     renderFilteredTable(document.getElementById('filterKeyword').value.trim());
   });
@@ -333,26 +226,14 @@
 
       if (!googleDriveFileId) {
         console.error('No Google Drive File ID for this model.');
+        alert('معرف الملف غير متوفر.');
         return;
       }
-      try {
-        await authenticate(true); // اجبار المصادقة عند النقر على عرض لضمان وجود الرمز
-
-        const iframe = document.getElementById('pdfViewer');
-        const accessToken = gapi.client.getToken().access_token;
-        if (!accessToken) {
-          console.error('Access token not available for viewing.');
-          alert('خطأ: لم يتم الحصول على رمز الوصول. يرجى المصادقة أولاً.');
-          return;
-        }
-        iframe.src = `https://docs.google.com/viewer?url=https://www.googleapis.com/drive/v3/files/${googleDriveFileId}?alt=media&access_token=${accessToken}&embedded=true`;
-        iframe.style.display = 'block';
-        iframe.scrollIntoView({ behavior: "smooth" });
-
-      } catch (err) {
-        console.error('Error viewing file from Google Drive:', err);
-        alert('تعذر عرض الملف. يرجى التأكد من اتصالك بالإنترنت ومنح الصلاحيات اللازمة.');
-      }
+      const iframe = document.getElementById('pdfViewer');
+      // استخدام رابط عرض عام لملفات Google Drive العامة
+      iframe.src = `https://drive.google.com/file/d/${googleDriveFileId}/preview`;
+      iframe.style.display = 'block';
+      iframe.scrollIntoView({ behavior: "smooth" });
     }
   });
 
@@ -370,8 +251,10 @@
     dateTimeDiv.textContent = `${formattedDate} - ${formattedTime}`;
   }
 
+  // Initial calls
+  fetchModelsFromLocalJson(); // جلب النماذج من ملف JSON عند تحميل الصفحة
   setInterval(updateDateTime, 1000);
-  updateDateTime(); // Initial call to display immediately
+  updateDateTime();
 </script>
 </body>
 </html>
