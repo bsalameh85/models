@@ -181,40 +181,31 @@
   <iframe id="pdfViewer"></iframe>
 </section>
 </main>
-
 <script async defer src="https://apis.google.com/js/api.js"></script>
 <script src="https://accounts.google.com/gsi/client"></script>
 
 <script>
-  // لم نعد بحاجة إلى IndexedDB لتخزين قائمة الملفات، فقط لتخزين مؤقت إذا أردت
-  // ولكن من الأفضل جلب كل شيء من درايف مباشرة لضمان المزامنة.
-  // سنقوم بإبقاء تعريفات IndexedDB هنا لكن لن نستخدمها لجلب قائمة النماذج.
-  const DB_NAME = 'PDFModelsDB';
-  const DB_VERSION = 1;
-  const STORE_NAME = 'models';
-  let db; // ستبقى غير مستخدمة فعلياً لجلب النماذج، فقط للحفظ عند الرفع.
-
   // Google API & GIS configuration
-  const CLIENT_ID = '877200657875-b5qcv791tdespl57eof12tfl92q01hbm.apps.googleusercontent.com'; 
-  const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly'; // أضفنا read-only scope
-  
-  const DESTINATION_FOLDER_ID = '1pr2L9RzJ5kI5ybA94EOZYuy1WFtoia-8'; 
+  const CLIENT_ID = '877200657875-b5qcv791tdespl57eof12tfl92q01hbm.apps.googleusercontent.com';
+  // الصلاحيات: drive.file للرفع والتعديل والحذف، و drive.metadata.readonly لجلب القائمة
+  const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly';
+  const DESTINATION_FOLDER_ID = '1pr2L9RzJ5kI5ybA94EOZYuy1WFtoia-8'; // مجلد "نماذج صحة مادبا"
 
   let gapiInited = false;
   let gisInited = false;
-  let tokenClient; 
+  let tokenClient;
 
   function handleClientLoad() {
     gapi.load('client', intializeGapiClient);
     google.accounts.id.initialize({
       client_id: CLIENT_ID,
-      callback: () => {}, 
+      callback: () => {}, // Callback for GSI is not strictly needed here
     });
     if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
       onLoadGis();
     } else {
       console.log('Waiting for google.accounts.oauth2 to load...');
-      setTimeout(handleClientLoad, 200); 
+      setTimeout(handleClientLoad, 200); // Retry loading GIS if not ready
     }
   }
 
@@ -224,100 +215,20 @@
     });
     gapiInited = true;
     console.log('gapi client initialized');
-    // لا داعي لفتح DB عند التحميل لأننا سنقرأ من درايف مباشرة
-    renderTable(); // عرض الجدول مباشرة بعد تهيئة GAPI
+    renderTable(); // Display table immediately after GAPI initialization
   }
 
   function onLoadGis() {
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
       scope: SCOPES,
-      callback: '', 
+      callback: '', // The callback function will be assigned dynamically before token request
     });
     gisInited = true;
     console.log('GIS client initialized');
   }
 
-  window.onload = handleClientLoad; 
-
-  // IndexedDB Functions (تم إبقاؤها إذا أردت استخدامها لأغراض أخرى، لكن ليست لجلب النماذج)
-  function openDB() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-      request.onupgradeneeded = event => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' }); 
-          store.createIndex('name', 'name', { unique: false });
-          store.createIndex('googleDriveFileId', 'googleDriveFileId', { unique: true });
-        }
-      };
-      request.onsuccess = event => {
-        db = event.target.result;
-        resolve(db);
-      };
-      request.onerror = event => {
-        reject(event.target.error);
-      };
-    });
-  }
-
-  function saveModelToIndexedDB(model) {
-    return new Promise((resolve, reject) => {
-      if (!db) { // افتح DB إذا لم تكن مفتوحة (للتأكد فقط)
-        openDB().then(() => {
-          const tx = db.transaction(STORE_NAME, 'readwrite');
-          const store = tx.objectStore(STORE_NAME);
-          const request = store.put(model);
-          request.onsuccess = () => resolve();
-          request.onerror = e => reject(e.target.error);
-        }).catch(err => reject(err));
-      } else {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        const request = store.put(model);
-        request.onsuccess = () => resolve();
-        request.onerror = e => reject(e.target.error);
-      }
-    });
-  }
-
-  function deleteModelFromIndexedDB(id) {
-    return new Promise((resolve, reject) => {
-      if (!db) { reject('IndexedDB not open'); return; }
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.delete(id);
-      request.onsuccess = () => resolve();
-      request.onerror = e => reject(e.target.error);
-    });
-  }
-
-  // هذه الوظيفة تم تعديلها لجلب الملفات من Google Drive
-  async function getAllModelsFromDrive() {
-    try {
-      await authenticate(); // تأكد من المصادقة قبل جلب الملفات
-
-      const response = await gapi.client.drive.files.list({
-        q: `'${DESTINATION_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false`,
-        fields: 'files(id, name, createdTime)', // جلب المعرف والاسم ووقت الإنشاء
-        pageSize: 100 // يمكن زيادة هذا إذا كان لديك الكثير من الملفات
-      });
-
-      const files = response.result.files;
-      // تحويل الملفات إلى تنسيق يتناسب مع ما كنا نستخدمه سابقًا
-      // ID للملف هو googleDriveFileId، واسمه هو name
-      return files.map(file => ({
-        id: file.createdTime ? new Date(file.createdTime).getTime() : Date.now(), // استخدم وقت الإنشاء كـ ID مؤقت
-        name: file.name.replace(/\.pdf$/i, ''), // إزالة امتداد .pdf من الاسم
-        googleDriveFileId: file.id
-      }));
-    } catch (error) {
-      console.error('Error fetching files from Google Drive:', error);
-      showMessage('خطأ في جلب الملفات من Google Drive: ' + (error.result?.error?.message || error.message), true);
-      return []; // إرجاع مصفوفة فارغة في حالة الخطأ
-    }
-  }
+  window.onload = handleClientLoad;
 
   // Helper functions
   function showMessage(text, isError = false) {
@@ -339,7 +250,7 @@
     return new Promise((resolve, reject) => {
       if (!gapiInited || !gisInited) {
         console.error('Google API client or GIS not loaded yet. Retrying in 1 second...');
-        setTimeout(() => authenticate().then(resolve).catch(reject), 1000); 
+        setTimeout(() => authenticate().then(resolve).catch(reject), 1000);
         return;
       }
 
@@ -355,9 +266,10 @@
       };
 
       const token = gapi.client.getToken();
-      if (token === null || token.expires_at < Date.now() + 60000) { 
+      // If no token or expired, request new token
+      if (token === null || token.expires_at < Date.now() + 60000) {
         console.log('Requesting new access token...');
-        tokenClient.requestAccessToken({ prompt: 'consent' }); 
+        tokenClient.requestAccessToken({ prompt: 'consent' }); // 'consent' to show popup for initial consent
       } else {
         console.log('Using existing access token.');
         resolve();
@@ -365,25 +277,50 @@
     });
   }
 
+  // Get all models from Google Drive
+  async function getAllModelsFromDrive() {
+    try {
+      await authenticate(); // Ensure authenticated before fetching files
 
-  // Render Table (تم تعديلها لاستخدام getAllModelsFromDrive)
+      const response = await gapi.client.drive.files.list({
+        q: `'${DESTINATION_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false`,
+        fields: 'files(id, name, createdTime)', // Fetch ID, name, and creation time
+        pageSize: 100 // Can increase if many files
+      });
+
+      const files = response.result.files;
+      return files.map(file => ({
+        id: file.createdTime ? new Date(file.createdTime).getTime() : Date.now(), // Use creation time as a unique ID for rendering (can be anything unique)
+        name: file.name.replace(/\.pdf$/i, ''), // Remove .pdf extension from displayed name
+        googleDriveFileId: file.id // Store Google Drive File ID for actions
+      }));
+    } catch (error) {
+      console.error('Error fetching files from Google Drive:', error);
+      showMessage('خطأ في جلب الملفات من Google Drive: ' + (error.result?.error?.message || error.message), true);
+      return []; // Return empty array on error
+    }
+  }
+
+  // Render Table (updated to use getAllModelsFromDrive)
   async function renderTable() {
-    const models = await getAllModelsFromDrive(); // جلب النماذج من درايف
+    const models = await getAllModelsFromDrive(); // Fetch models from Drive
     const tbody = document.querySelector('#modelsTable tbody');
     tbody.innerHTML = '';
     document.getElementById('counter').textContent = `عدد النماذج: ${models.length}`;
+
     if (models.length === 0) {
       tbody.innerHTML = `<tr><td colspan="3">لا يوجد نماذج مضافة حتى الآن.</td></tr>`;
       document.getElementById('pdfViewer').style.display = 'none';
       return;
     }
+
     models.forEach(model => {
       const tr = document.createElement('tr');
-      // Passed googleDriveFileId to data-googledriveid for view and delete actions
+      // Pass googleDriveFileId to data-googledriveid for view and delete actions
       tr.innerHTML = `
-        <td><input type="text" class="edit-input" data-id="${model.id}" data-field="name" value="${escapeHtml(model.name)}" /></td>
-        <td><button class="action-button viewBtn" data-id="${model.id}" data-googledriveid="${model.googleDriveFileId || ''}">عرض</button></td>
-        <td><button class="action-button deleteBtn" data-id="${model.id}" data-googledriveid="${model.googleDriveFileId || ''}">حذف</button></td>
+        <td><input type="text" class="edit-input" data-googledriveid="${model.googleDriveFileId || ''}" value="${escapeHtml(model.name)}" /></td>
+        <td><button class="action-button viewBtn" data-googledriveid="${model.googleDriveFileId || ''}">عرض</button></td>
+        <td><button class="action-button deleteBtn" data-googledriveid="${model.googleDriveFileId || ''}">حذف</button></td>
       `;
       tbody.appendChild(tr);
     });
@@ -394,25 +331,25 @@
     e.preventDefault();
     const nameInput = document.getElementById('name');
     const fileInput = document.getElementById('pdfFile');
-    let name = nameInput.value.trim(); // اسم الملف من الإدخال
+    let name = nameInput.value.trim(); // File name from input
     const file = fileInput.files[0];
 
     if (!name) { showMessage('يرجى إدخال اسم النموذج.', true); return; }
     if (!file || file.type !== 'application/pdf') { showMessage('يرجى اختيار ملف PDF صالح.', true); return; }
 
-    // إضافة امتداد .pdf إلى الاسم ليظهر في جوجل درايف
+    // Add .pdf extension to the name for Google Drive
     if (!name.endsWith('.pdf') && !name.endsWith('.PDF')) {
         name += '.pdf';
     }
 
     try {
-      await authenticate(); 
+      await authenticate(); // Authenticate
 
       const formData = new FormData();
       const metadata = {
         name: name,
         mimeType: 'application/pdf',
-        parents: [DESTINATION_FOLDER_ID] 
+        parents: [DESTINATION_FOLDER_ID] // Specify the folder
       };
       formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
       formData.append('file', file);
@@ -433,27 +370,16 @@
       const fileMetadata = await response.json();
       console.log('File uploaded to Google Drive:', fileMetadata);
 
-      // هنا نقوم بحفظ ID الملف فقط إلى IndexedDB (اختياري)
-      // قد لا تحتاج لحفظ هذا في IndexedDB على الإطلاق إذا كنت تعتمد على Google Drive بالكامل
-      // ولكن سنبقيه كـ نموذج بسيط
-      const model = { 
-        id: fileMetadata.id, // استخدام Drive ID كـ ID أساسي
-        name: fileMetadata.name.replace(/\.pdf$/i, ''), // إزالة الامتداد من الاسم المعروض
-        googleDriveFileId: fileMetadata.id 
-      };
-      // إذا كنت لا تريد تخزين في IndexedDB على الإطلاق، يمكنك حذف السطر التالي
-      // await saveModelToIndexedDB(model); 
-      
       showMessage('تم إضافة النموذج ورفعه بنجاح.');
       e.target.reset();
-      await renderTable(); // إعادة عرض الجدول بعد الرفع ليرى التغيير
+      await renderTable(); // Re-render table to show the new model
     } catch (err) {
       showMessage('خطأ أثناء رفع الملف أو الحفظ: ' + err.message || err, true);
       console.error('Upload/Save error:', err);
     }
   });
 
-  // Edit Name (تم تعديلها لتحديث اسم الملف في Google Drive)
+  // Edit Name (updated to rename file in Google Drive)
   document.querySelector('#modelsTable tbody').addEventListener('change', async e => {
     if (e.target.classList.contains('edit-input')) {
       const googleDriveFileId = e.target.dataset.googledriveid; // Get Drive File ID
@@ -465,44 +391,43 @@
       }
       if (!newName) {
         showMessage('اسم النموذج لا يمكن أن يكون فارغاً.', true);
-        renderTable(); // أعد عرض الجدول لإعادة القيمة القديمة
+        renderTable(); // Re-render table to revert to old value
         return;
       }
 
-      // أضف امتداد .pdf مرة أخرى للاسم قبل التحديث في درايف
+      // Add .pdf extension back to the name before updating in Drive
       if (!newName.endsWith('.pdf') && !newName.endsWith('.PDF')) {
           newName += '.pdf';
       }
 
       try {
-        await authenticate(); // تأكد من المصادقة
+        await authenticate(); // Authenticate
 
         const response = await gapi.client.drive.files.update({
           fileId: googleDriveFileId,
           resource: {
             name: newName
           },
-          fields: 'id,name' // اطلب فقط المعرف والاسم المحدث
+          fields: 'id,name' // Request only ID and updated name
         });
 
         if (response.status === 200) {
           showMessage('تم تحديث اسم النموذج في Google Drive.');
-          await renderTable(); // أعد عرض الجدول لتحديث الاسم
+          await renderTable(); // Re-render table to update the name
         } else {
           throw new Error('فشل تحديث اسم الملف في Google Drive: ' + response.statusText);
         }
       } catch (err) {
         showMessage('خطأ في تحديث الاسم: ' + err.message || err, true);
         console.error('Rename error:', err);
-        renderTable(); // أعد عرض الجدول لإعادة القيمة القديمة
+        renderTable(); // Re-render table to revert to old value
       }
     }
   });
 
   // Delete and View Buttons Event Listener
   document.querySelector('#modelsTable tbody').addEventListener('click', async e => {
-    const id = Number(e.target.dataset.id); // هذا ID سيكون وقت الإنشاء الآن
-    const googleDriveFileId = e.target.dataset.googledriveid; // هذا هو ID المهم لدرايف
+    const googleDriveFileId = e.target.dataset.googledriveid; // This is the important Drive ID
 
     if (e.target.classList.contains('deleteBtn')) {
       if (confirm('هل أنت متأكد من حذف هذا النموذج؟ سيتم حذفه أيضاً من Google Drive.')) {
@@ -524,12 +449,8 @@
             console.log('File deleted from Google Drive:', googleDriveFileId);
           }
 
-          // لا داعي لحذفه من IndexedDB إذا كنا لا نعتمد عليها بالكامل للقائمة
-          // ولكن يمكنك إبقاء السطر التالي إذا كنت تستخدم IndexedDB لأغراض أخرى
-          // await deleteModelFromIndexedDB(id); 
-
           showMessage('تم حذف النموذج بنجاح.');
-          await renderTable(); // Re-render table to show the new model
+          await renderTable(); // Re-render table to show the new models
           document.getElementById('pdfViewer').style.display = 'none'; // Hide viewer if open
         } catch (err) {
           showMessage('خطأ في الحذف: ' + err.message || err, true);
@@ -544,7 +465,7 @@
         return;
       }
       try {
-        await authenticate(); 
+        await authenticate(); // Authenticate
 
         const iframe = document.getElementById('pdfViewer');
         const accessToken = gapi.client.getToken().access_token;
@@ -552,7 +473,7 @@
           showMessage('خطأ: لم يتم الحصول على رمز الوصول. يرجى المصادقة.', true);
           return;
         }
-        // استخدام Google Docs Viewer مع رمز الوصول
+        // Using Google Docs Viewer with access token
         iframe.src = `https://docs.google.com/viewer?url=https://www.googleapis.com/drive/v3/files/${googleDriveFileId}?alt=media&access_token=${accessToken}&embedded=true`;
         iframe.style.display = 'block';
         iframe.scrollIntoView({ behavior: "smooth" });
@@ -564,7 +485,6 @@
       }
     }
   });
-
 </script>
 </body>
 </html>
