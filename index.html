@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <title>لوحة تحكم المدير - إدارة نماذج PDF</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f4f8;
+      margin: 0; padding: 0;
+      direction: rtl;
+    }
+    header {
+      background: #1e3a8a;
+      padding: 15px 20px;
+      color: white;
+      text-align: center;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+    header div {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    main {
+      max-width: 900px;
+      margin: 30px auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px #ccc;
+    }
+    label {
+      display: block;
+      margin: 10px 0 5px;
+    }
+    input[type=text], input[type=file] {
+      width: 100%;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+    }
+    button {
+      margin-top: 15px;
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      padding: 12px 25px;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #1e40af;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 25px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 12px;
+      text-align: center;
+    }
+    th {
+      background-color: #e5e7eb;
+    }
+    .message {
+      margin-top: 15px;
+      padding: 12px;
+      border-radius: 6px;
+    }
+    .success {
+      background-color: #d1fae5;
+      color: #065f46;
+    }
+    .error {
+      background-color: #fee2e2;
+      color: #991b1b;
+    }
+    nav {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    nav a {
+      color: #1e3a8a;
+      text-decoration: none;
+      font-weight: bold;
+      font-size: 18px;
+      border: 2px solid #1e3a8a;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: background-color 0.3s, color 0.3s;
+    }
+    nav a:hover {
+      background-color: #1e3a8a;
+      color: white;
+    }
+    input.edit-input {
+      width: 90%;
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    #pdfViewer {
+      display: none;
+      width: 100%;
+      height: 600px;
+      margin-top: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px #aaa;
+    }
+    .action-button {
+      width: 80px;
+      height: 40px;
+      font-size: 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s;
+      color: white;
+    }
+    .viewBtn {
+      background-color: #2563eb;
+    }
+    .viewBtn:hover {
+      background-color: #1e40af;
+    }
+    .deleteBtn {
+      background-color: #dc2626;
+    }
+    .deleteBtn:hover {
+      background-color: #991b1b;
+    }
+    #counter {
+      margin-top: 10px;
+      font-size: 18px;
+      font-weight: bold;
+      color: #1e3a8a;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>مديرية صحة محافظة مادبا</div>
+  لوحة تحكم المدير - إدارة نماذج PDF
+</header>
+
+<main>
+
+<nav>
+  <a href="user.html">واجهة المستعلم 🔍</a>
+</nav>
+
+<section id="uploadSection">
+  <h2>إضافة نموذج جديد</h2>
+  <form id="uploadForm">
+    <label for="name">اسم النموذج</label>
+    <input type="text" id="name" required />
+    <label for="pdfFile">اختر ملف PDF</label>
+    <input type="file" id="pdfFile" accept="application/pdf" required />
+    <button type="submit">إضافة النموذج</button>
+  </form>
+  <div id="message" class="message" style="display:none;"></div>
+</section>
+
+<hr />
+
+<section id="manageSection">
+  <h2>إدارة النماذج</h2>
+  <div id="counter">عدد النماذج: 0</div>
+  <table id="modelsTable">
+    <thead>
+      <tr>
+        <th>اسم النموذج</th>
+        <th>الملف</th>
+        <th>الإجراءات</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <iframe id="pdfViewer"></iframe>
+</section>
+
+</main>
+
+<script>
+  const DB_NAME = 'PDFModelsDB';
+  const DB_VERSION = 1;
+  const STORE_NAME = 'models';
+  let db;
+
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = event => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+          store.createIndex('name', 'name', { unique: false });
+        }
+      };
+      request.onsuccess = event => {
+        db = event.target.result;
+        resolve(db);
+      };
+      request.onerror = event => {
+        reject(event.target.error);
+      };
+    });
+  }
+
+  function saveModel(model) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.put(model);
+      request.onsuccess = () => resolve();
+      request.onerror = e => reject(e.target.error);
+    });
+  }
+
+  function deleteModel(id) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = e => reject(e.target.error);
+    });
+  }
+
+  function getAllModels() {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = e => resolve(e.target.result);
+      request.onerror = e => reject(e.target.error);
+    });
+  }
+
+  function showMessage(text, isError = false) {
+    const msgDiv = document.getElementById('message');
+    msgDiv.style.display = 'block';
+    msgDiv.textContent = text;
+    msgDiv.className = isError ? 'message error' : 'message success';
+    setTimeout(() => msgDiv.style.display = 'none', 4000);
+  }
+
+  async function renderTable() {
+    const models = await getAllModels();
+    const tbody = document.querySelector('#modelsTable tbody');
+    tbody.innerHTML = '';
+    document.getElementById('counter').textContent = `عدد النماذج: ${models.length}`;
+    if (models.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="3">لا يوجد نماذج مضافة حتى الآن.</td></tr>`;
+      document.getElementById('pdfViewer').style.display = 'none';
+      return;
+    }
+    models.forEach(model => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="text" class="edit-input" data-id="${model.id}" data-field="name" value="${escapeHtml(model.name)}" /></td>
+        <td><button class="action-button viewBtn" data-id="${model.id}">عرض</button></td>
+        <td><button class="action-button deleteBtn" data-id="${model.id}">حذف</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function escapeHtml(text) {
+    return text.replace(/[&<>"']/g, m => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[m]);
+  }
+
+  openDB().then(() => renderTable()).catch(err => showMessage('خطأ في فتح قاعدة البيانات: ' + err, true));
+
+  document.getElementById('uploadForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const nameInput = document.getElementById('name');
+    const fileInput = document.getElementById('pdfFile');
+    const name = nameInput.value.trim();
+    const file = fileInput.files[0];
+    if (!name) { showMessage('يرجى إدخال اسم النموذج.', true); return; }
+    if (!file || file.type !== 'application/pdf') { showMessage('يرجى اختيار ملف PDF صالح.', true); return; }
+    const reader = new FileReader();
+    reader.onload = async function(event) {
+      const fileBlob = new Blob([event.target.result], { type: 'application/pdf' });
+      const model = { id: Date.now(), name, fileBlob };
+      try {
+        await saveModel(model);
+        showMessage('تم إضافة النموذج بنجاح.');
+        e.target.reset();
+        renderTable();
+      } catch (err) {
+        showMessage('خطأ أثناء الحفظ: ' + err, true);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  document.querySelector('#modelsTable tbody').addEventListener('change', async e => {
+    if (e.target.classList.contains('edit-input')) {
+      const id = Number(e.target.dataset.id);
+      const value = e.target.value.trim();
+      if (value) {
+        try {
+          const models = await getAllModels();
+          const model = models.find(m => m.id === id);
+          if (model) {
+            model.name = value;
+            await saveModel(model);
+            showMessage('تم تحديث البيانات.');
+            renderTable();
+          }
+        } catch (err) {
+          showMessage('خطأ في التحديث: ' + err, true);
+        }
+      }
+    }
+  });
+
+  document.querySelector('#modelsTable tbody').addEventListener('click', async e => {
+    const id = Number(e.target.dataset.id);
+    if (e.target.classList.contains('deleteBtn')) {
+      if (confirm('هل أنت متأكد من حذف هذا النموذج؟')) {
+        try {
+          await deleteModel(id);
+          showMessage('تم حذف النموذج.');
+          renderTable();
+          document.getElementById('pdfViewer').style.display = 'none';
+        } catch (err) {
+          showMessage('خطأ في الحذف: ' + err, true);
+        }
+      }
+    }
+    if (e.target.classList.contains('viewBtn')) {
+      try {
+        const models = await getAllModels();
+        const model = models.find(m => m.id === id);
+        if (model) {
+          const iframe = document.getElementById('pdfViewer');
+          if (model.fileBlob instanceof Blob) {
+            const url = URL.createObjectURL(model.fileBlob);
+            iframe.src = url;
+            iframe.style.display = 'block';
+            iframe.onload = () => URL.revokeObjectURL(url);
+          } else {
+            showMessage('ملف غير صالح للعرض.', true);
+          }
+          iframe.scrollIntoView({ behavior: "smooth" });
+        }
+      } catch (err) {
+        showMessage('خطأ في تحميل الملف: ' + err, true);
+      }
+    }
+  });
+</script>
+
+</body>
+</html>
