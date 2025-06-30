@@ -145,18 +145,14 @@
   </style>
 </head>
 <body>
-
 <header>
   <div>مديرية صحة محافظة مادبا</div>
   لوحة تحكم المدير - إدارة نماذج PDF
 </header>
-
 <main>
-
 <nav>
   <a href="user.html">واجهة المستعلم 🔍</a>
 </nav>
-
 <section id="uploadSection">
   <h2>إضافة نموذج جديد</h2>
   <form id="uploadForm">
@@ -168,9 +164,7 @@
   </form>
   <div id="message" class="message" style="display:none;"></div>
 </section>
-
 <hr />
-
 <section id="manageSection">
   <h2>إدارة النماذج</h2>
   <div id="counter">عدد النماذج: 0</div>
@@ -184,11 +178,12 @@
     </thead>
     <tbody></tbody>
   </table>
-
   <iframe id="pdfViewer"></iframe>
 </section>
-
 </main>
+
+<script async defer src="https://apis.google.com/js/api.js"></script>
+<script async defer src="https://accounts.google.com/gsi/client"></script>
 
 <script>
   const DB_NAME = 'PDFModelsDB';
@@ -196,14 +191,57 @@
   const STORE_NAME = 'models';
   let db;
 
+  // Google API & GIS configuration
+  const CLIENT_ID = '877200657875-b5qcv791tdespl57eof12tfl92q01hbm.apps.googleusercontent.com'; // **الـ Client ID الخاص بك**
+  const SCOPES = 'https://www.googleapis.com/auth/drive.file'; // يمنح الوصول للملفات التي ينشئها التطبيق
+
+  let gapiInited = false;
+  let gisInited = false;
+  let tokenClient; // لـ Google Identity Services (GIS)
+
+  function handleClientLoad() {
+    gapi.load('client', intializeGapiClient);
+    google.accounts.id.initialize({
+      client_id: CLIENT_ID,
+      callback: () => {}, // Callback for Google Sign-In, not directly used for OAuth token here
+    });
+    google.accounts.oauth2.loadDiscovery(onLoadGis);
+  }
+
+  async function intializeGapiClient() {
+    await gapi.client.init({
+      discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+    });
+    gapiInited = true;
+    console.log('gapi client initialized');
+    // بعد تهيئة GAPI، نفتح قاعدة البيانات ونعرض الجدول
+    openDB().then(() => renderTable()).catch(err => showMessage('خطأ في فتح قاعدة البيانات: ' + err, true));
+  }
+
+  function onLoadGis() {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      callback: '', // This will be set dynamically in authenticate()
+    });
+    gisInited = true;
+    console.log('GIS client initialized');
+  }
+
+  window.onload = handleClientLoad; // استدعاء عند تحميل الصفحة
+
+  // IndexedDB Functions (modified to store googleDriveFileId instead of fileBlob)
   function openDB() {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
       request.onupgradeneeded = event => {
         const db = event.target.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+          // Changed keyPath from 'id' to 'googleDriveFileId' to ensure uniqueness for Drive files
+          // If you need 'id' for other purposes, you can add it as another index or property
+          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' }); // Keep 'id' for consistency if you modify it later
           store.createIndex('name', 'name', { unique: false });
+          store.createIndex('googleDriveFileId', 'googleDriveFileId', { unique: true }); // New index for Drive ID
         }
       };
       request.onsuccess = event => {
@@ -216,7 +254,8 @@
     });
   }
 
-  function saveModel(model) {
+  // saveModel is now only for IndexedDB, upload handled separately
+  function saveModelToIndexedDB(model) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
@@ -226,7 +265,7 @@
     });
   }
 
-  function deleteModel(id) {
+  function deleteModelFromIndexedDB(id) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
@@ -246,6 +285,7 @@
     });
   }
 
+  // Helper functions
   function showMessage(text, isError = false) {
     const msgDiv = document.getElementById('message');
     msgDiv.style.display = 'block';
@@ -254,6 +294,46 @@
     setTimeout(() => msgDiv.style.display = 'none', 4000);
   }
 
+  function escapeHtml(text) {
+    return text.replace(/[&<>"']/g, m => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[m]);
+  }
+
+  // Authentication function
+  async function authenticate() {
+    return new Promise((resolve, reject) => {
+      if (!gapiInited || !gisInited) {
+        console.error('Google API client or GIS not loaded yet. Retrying in 1 second...');
+        setTimeout(() => authenticate().then(resolve).catch(reject), 1000); // Retry after 1 second
+        return;
+      }
+
+      tokenClient.callback = (resp) => {
+        if (resp.error) {
+          console.error('Authentication error:', resp.error);
+          showMessage('خطأ في المصادقة: ' + (resp.error.details || resp.error), true);
+          reject(resp.error);
+        } else {
+          console.log('Authentication successful:', resp);
+          resolve();
+        }
+      };
+
+      // Check for existing valid token
+      const token = gapi.client.getToken();
+      if (token === null || token.expires_at < Date.now() + 60000) { // Check if token exists or expires in less than 1 min
+        console.log('Requesting new access token...');
+        tokenClient.requestAccessToken({ prompt: 'consent' }); // 'consent' to re-prompt for consent
+      } else {
+        console.log('Using existing access token.');
+        resolve();
+      }
+    });
+  }
+
+
+  // Render Table (modified for googleDriveFileId)
   async function renderTable() {
     const models = await getAllModels();
     const tbody = document.querySelector('#modelsTable tbody');
@@ -266,47 +346,71 @@
     }
     models.forEach(model => {
       const tr = document.createElement('tr');
+      // Passed googleDriveFileId to data-googledriveid for view and delete actions
       tr.innerHTML = `
         <td><input type="text" class="edit-input" data-id="${model.id}" data-field="name" value="${escapeHtml(model.name)}" /></td>
-        <td><button class="action-button viewBtn" data-id="${model.id}">عرض</button></td>
-        <td><button class="action-button deleteBtn" data-id="${model.id}">حذف</button></td>
+        <td><button class="action-button viewBtn" data-id="${model.id}" data-googledriveid="${model.googleDriveFileId || ''}">عرض</button></td>
+        <td><button class="action-button deleteBtn" data-id="${model.id}" data-googledriveid="${model.googleDriveFileId || ''}">حذف</button></td>
       `;
       tbody.appendChild(tr);
     });
   }
 
-  function escapeHtml(text) {
-    return text.replace(/[&<>"']/g, m => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    })[m]);
-  }
-
-  openDB().then(() => renderTable()).catch(err => showMessage('خطأ في فتح قاعدة البيانات: ' + err, true));
-
+  // Upload Form Event Listener (modified to upload to Google Drive)
   document.getElementById('uploadForm').addEventListener('submit', async e => {
     e.preventDefault();
     const nameInput = document.getElementById('name');
     const fileInput = document.getElementById('pdfFile');
     const name = nameInput.value.trim();
     const file = fileInput.files[0];
+
     if (!name) { showMessage('يرجى إدخال اسم النموذج.', true); return; }
     if (!file || file.type !== 'application/pdf') { showMessage('يرجى اختيار ملف PDF صالح.', true); return; }
-    const reader = new FileReader();
-    reader.onload = async function(event) {
-      const fileBlob = new Blob([event.target.result], { type: 'application/pdf' });
-      const model = { id: Date.now(), name, fileBlob };
-      try {
-        await saveModel(model);
-        showMessage('تم إضافة النموذج بنجاح.');
-        e.target.reset();
-        renderTable();
-      } catch (err) {
-        showMessage('خطأ أثناء الحفظ: ' + err, true);
+
+    try {
+      await authenticate(); // Authenticate before attempting upload
+
+      // Create FormData for multipart upload
+      const formData = new FormData();
+      const metadata = {
+        name: name,
+        mimeType: 'application/pdf',
+        // Optional: parents: ['FOLDER_ID'] if you want to upload to a specific folder
+      };
+      formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      formData.append('file', file);
+
+      // Perform the upload using fetch API
+      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: new Headers({
+          'Authorization': 'Bearer ' + gapi.client.getToken().access_token
+        }),
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`فشل رفع الملف إلى Google Drive: ${errorData.error.message || response.statusText}`);
       }
-    };
-    reader.readAsArrayBuffer(file);
+
+      const fileMetadata = await response.json();
+      console.log('File uploaded to Google Drive:', fileMetadata);
+
+      // Save model with Google Drive File ID to IndexedDB
+      const model = { id: Date.now(), name: name, googleDriveFileId: fileMetadata.id };
+      await saveModelToIndexedDB(model);
+      
+      showMessage('تم إضافة النموذج ورفعه بنجاح.');
+      e.target.reset();
+      renderTable(); // Re-render table to show the new model
+    } catch (err) {
+      showMessage('خطأ أثناء رفع الملف أو الحفظ: ' + err.message || err, true);
+      console.error('Upload/Save error:', err);
+    }
   });
 
+  // Edit Name (IndexedDB only, no Drive interaction needed here)
   document.querySelector('#modelsTable tbody').addEventListener('change', async e => {
     if (e.target.classList.contains('edit-input')) {
       const id = Number(e.target.dataset.id);
@@ -317,7 +421,7 @@
           const model = models.find(m => m.id === id);
           if (model) {
             model.name = value;
-            await saveModel(model);
+            await saveModelToIndexedDB(model); // Update name in IndexedDB
             showMessage('تم تحديث البيانات.');
             renderTable();
           }
@@ -328,42 +432,72 @@
     }
   });
 
+  // Delete and View Buttons Event Listener
   document.querySelector('#modelsTable tbody').addEventListener('click', async e => {
     const id = Number(e.target.dataset.id);
+    const googleDriveFileId = e.target.dataset.googledriveid; // Get Drive File ID
+
     if (e.target.classList.contains('deleteBtn')) {
-      if (confirm('هل أنت متأكد من حذف هذا النموذج؟')) {
+      if (confirm('هل أنت متأكد من حذف هذا النموذج؟ سيتم حذفه أيضاً من Google Drive.')) {
         try {
-          await deleteModel(id);
-          showMessage('تم حذف النموذج.');
+          await authenticate(); // Authenticate before deleting from Drive
+
+          if (googleDriveFileId) {
+            // Delete from Google Drive
+            const response = await fetch(`https://www.googleapis.com/drive/v3/files/${googleDriveFileId}`, {
+              method: 'DELETE',
+              headers: new Headers({
+                'Authorization': 'Bearer ' + gapi.client.getToken().access_token
+              })
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(`فشل حذف الملف من Google Drive: ${errorData.error.message || response.statusText}`);
+            }
+            console.log('File deleted from Google Drive:', googleDriveFileId);
+          }
+
+          // Delete from IndexedDB
+          await deleteModelFromIndexedDB(id);
+          showMessage('تم حذف النموذج بنجاح.');
           renderTable();
-          document.getElementById('pdfViewer').style.display = 'none';
+          document.getElementById('pdfViewer').style.display = 'none'; // Hide viewer if open
         } catch (err) {
-          showMessage('خطأ في الحذف: ' + err, true);
+          showMessage('خطأ في الحذف: ' + err.message || err, true);
+          console.error('Delete error:', err);
         }
       }
     }
+
     if (e.target.classList.contains('viewBtn')) {
+      if (!googleDriveFileId) {
+        showMessage('لا يوجد معرف ملف جوجل درايف لهذا النموذج.', true);
+        return;
+      }
       try {
-        const models = await getAllModels();
-        const model = models.find(m => m.id === id);
-        if (model) {
-          const iframe = document.getElementById('pdfViewer');
-          if (model.fileBlob instanceof Blob) {
-            const url = URL.createObjectURL(model.fileBlob);
-            iframe.src = url;
-            iframe.style.display = 'block';
-            iframe.onload = () => URL.revokeObjectURL(url);
-          } else {
-            showMessage('ملف غير صالح للعرض.', true);
-          }
-          iframe.scrollIntoView({ behavior: "smooth" });
+        await authenticate(); // Authenticate before viewing from Drive
+
+        const iframe = document.getElementById('pdfViewer');
+        // Construct the URL to view the PDF directly from Google Drive.
+        // This method requires authentication as the file is private to the uploader's Drive.
+        const accessToken = gapi.client.getToken().access_token;
+        if (!accessToken) {
+          showMessage('خطأ: لم يتم الحصول على رمز الوصول. يرجى المصادقة.', true);
+          return;
         }
+        iframe.src = `https://docs.google.com/viewer?url=https://www.googleapis.com/drive/v3/files/${googleDriveFileId}?alt=media&access_token=${accessToken}&embedded=true`;
+        iframe.style.display = 'block';
+        iframe.scrollIntoView({ behavior: "smooth" });
+        showMessage('يتم تحميل الملف للعرض...');
+
       } catch (err) {
-        showMessage('خطأ في تحميل الملف: ' + err, true);
+        showMessage('خطأ في تحميل الملف من جوجل درايف: ' + err.message || err, true);
+        console.error('View error:', err);
       }
     }
   });
-</script>
 
+</script>
 </body>
 </html>
